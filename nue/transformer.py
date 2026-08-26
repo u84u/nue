@@ -32,7 +32,11 @@ class KVCache:
 
     def get(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Return cached K, V up to cur_len."""
-        return self.k[:, :, :self.cur_len].contiguous(), self.v[:, :, :self.cur_len].contiguous()
+        # Use narrow() + reshape to avoid contiguous() copy
+        # The cache is pre-allocated contiguous, so slicing then reshape is safe
+        k = self.k[:, :, :self.cur_len]
+        v = self.v[:, :, :self.cur_len]
+        return k, v
 
     def reset(self):
         """Reset cache to empty (for new sequences)."""
@@ -268,3 +272,43 @@ class TinyTransformer(nn.Module):
             next_logits = logits[:, -1, :]
 
         return idx
+
+    def generate_stream(self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0, top_k: Optional[int] = None):
+        """Yield one token at a time during autoregressive generation.
+
+        Yields:
+            token_id: int — each generated token ID
+        """
+        device = idx.device
+        batch_size = idx.shape[0]
+
+        cache = KVCacheList(
+            num_layers=self.num_layers,
+            max_seq_len=self.max_seq_len,
+            batch_size=batch_size,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            dtype=next(self.parameters()).dtype,
+            device=device,
+        )
+
+        logits = self(idx, offset=0, cache=cache)
+        next_logits = logits[:, -1, :]
+
+        for _ in range(max_new_tokens):
+            if temperature == 0:
+                next_token = next_logits.argmax(dim=-1, keepdim=True)
+            else:
+                scaled = next_logits / temperature
+                if top_k is not None:
+                    v, _ = torch.topk(scaled, min(top_k, scaled.size(-1)))
+                    scaled[scaled < v[:, [-1]]] = float('-inf')
+                probs = torch.softmax(scaled, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+
+            token_id = next_token[0, 0].item()
+            yield token_id
+
+            next_token_2d = next_token.unsqueeze(0) if next_token.dim() == 1 else next_token
+            logits = self(next_token_2d, offset=cache.cur_len, cache=cache)
+            next_logits = logits[:, -1, :]

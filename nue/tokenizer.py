@@ -2,6 +2,7 @@ from collections import Counter
 from tqdm import tqdm
 import numpy as np
 import heapq
+import json
 
 
 class _TrieNode:
@@ -204,3 +205,24 @@ class Tokenizer:
         for tid in token_ids:
             buf.extend(d.get(tid, b""))
         return buf.decode("utf-8", errors="replace")
+
+    # ── Serialization ─────────────────────────────────────────────────
+
+    def save(self, filepath: str):
+        """Save tokenizer to a JSON file."""
+        data = {
+            "vocab_size": self.vocab_size,
+            "decoder": {str(k): v.hex() for k, v in self.decoder.items()},
+        }
+        with open(filepath, "w") as f:
+            json.dump(data, f)
+
+    @classmethod
+    def load(cls, filepath: str) -> "Tokenizer":
+        """Load tokenizer from a JSON file."""
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        tok = cls(vocab_size=data["vocab_size"])
+        tok.decoder = {int(k): bytes.fromhex(v) for k, v in data["decoder"].items()}
+        tok._trie_root = tok._build_trie()
+        return tok

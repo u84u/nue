@@ -4,6 +4,7 @@ import math
 import os
 import json
 import time
+import sys
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from nue.transformer import TinyTransformer
@@ -11,10 +12,12 @@ from nue.losses import TrainingLosses
 from nue.tokenizer import Tokenizer
 from nue.weights_format import save_model_weights
 from nue.assertions import assert_binary_weights, BinaryWeightChecker
+from plot_loss import plot_loss
 
 CHECKPOINT_DIR = "implementations/1M"
-LOSS_LOG = os.path.join(CHECKPOINT_DIR, "loss_history.csv")
-TRAIN_STATE_FILE = os.path.join(CHECKPOINT_DIR, "train_state.pt")
+GENERATED_DIR = os.path.join(CHECKPOINT_DIR, "generated")
+LOSS_LOG = os.path.join(GENERATED_DIR, "loss_history.csv")
+TRAIN_STATE_FILE = os.path.join(GENERATED_DIR, "train_state.pt")
 
 
 class ShakespeareDataset(Dataset):
@@ -56,6 +59,7 @@ def save_loss_history(loss_history, filepath):
 
 def train(resume=False):
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(GENERATED_DIR, exist_ok=True)
 
     # 1M parameter config (Power-of-Two)
     config = {
@@ -75,8 +79,13 @@ def train(resume=False):
     with open("implementations/1M/shakespeare.txt", "r") as f:
         text = f.read()
 
-    tokenizer = Tokenizer(vocab_size=config["vocab_size"])
-    tokenizer.train(text)
+    tokenizer_file = os.path.join(GENERATED_DIR, "tokenizer.json")
+    if resume and os.path.exists(tokenizer_file):
+        tokenizer = Tokenizer.load(tokenizer_file)
+        print(f"Tokenizer loaded from {tokenizer_file}")
+    else:
+        tokenizer = Tokenizer(vocab_size=config["vocab_size"])
+        tokenizer.train(text)
 
     tokens = tokenizer.encode(text)
     data = torch.tensor(tokens, dtype=torch.long)
@@ -85,19 +94,23 @@ def train(resume=False):
     seq_len = 256
     batch_size = 8
     dataset = ShakespeareDataset(data, seq_len)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    num_workers = max(1, (os.cpu_count() or 4) // 2)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, persistent_workers=True)
+    print(f"DataLoader: {num_workers} workers")
 
     # Training config
     max_grad_norm = 1.0
     warmup_steps = 100
     max_lr = 3e-4
     min_lr = 1e-5
-    total_steps = 2000
+    cooldown_steps = 1000  # steps to decay lr from max_lr to min_lr before restarting cycle
 
     def get_lr(step):
-        if step < warmup_steps:
-            return max_lr * step / warmup_steps
-        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        cycle_len = warmup_steps + cooldown_steps
+        pos_in_cycle = step % cycle_len
+        if pos_in_cycle < warmup_steps:
+            return max_lr * pos_in_cycle / warmup_steps
+        progress = (pos_in_cycle - warmup_steps) / cooldown_steps
         return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
     optimizer = optim.Adam(model.parameters(), lr=max_lr)
@@ -126,59 +139,68 @@ def train(resume=False):
 
     save_every_steps = 200
 
-    pbar = tqdm(desc="Training", total=total_steps * seq_len * batch_size, initial=tokens_processed)
+    pbar = tqdm(desc="Training", initial=tokens_processed)
     t_start = time.time()
+    last_save = time.time()
 
-    for epoch in range(start_epoch, 100):
-        for x, y in loader:
-            step += 1
-            lr = get_lr(step)
-            for pg in optimizer.param_groups:
-                pg["lr"] = lr
+    def save_checkpoint():
+        save_model_weights(model, os.path.join(GENERATED_DIR, "model_final.weights"))
+        save_train_state(TRAIN_STATE_FILE, model, optimizer, step, tokens_processed, epoch, loss_history)
+        save_loss_history(loss_history, LOSS_LOG)
+        tokenizer.save(os.path.join(GENERATED_DIR, "tokenizer.json"))
+        with open(os.path.join(GENERATED_DIR, "config.json"), "w") as f:
+            json.dump(config, f, indent=2)
+        print(f"\nCheckpoint saved (step {step}, loss {loss_history[-1]['loss']:.4f})")
 
-            optimizer.zero_grad()
-            logits = model(x)
-            loss = loss_fn.ntp_loss(logits, y)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-            optimizer.step()
+    try:
+        for epoch in range(start_epoch, 10_000):
+            for x, y in loader:
+                step += 1
+                lr = get_lr(step)
+                for pg in optimizer.param_groups:
+                    pg["lr"] = lr
 
-            checker.check()
+                optimizer.zero_grad()
+                logits = model(x)
+                loss = loss_fn.ntp_loss(logits, y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                optimizer.step()
 
-            tokens_in_batch = x.numel()
-            tokens_processed += tokens_in_batch
+                checker.check()
 
-            loss_val = loss.item()
-            loss_history.append({
-                "step": step,
-                "loss": loss_val,
-                "tokens": tokens_processed,
-                "lr": lr,
-            })
+                tokens_in_batch = x.numel()
+                tokens_processed += tokens_in_batch
 
-            pbar.set_postfix({"loss": f"{loss_val:.4f}", "tokens": tokens_processed, "lr": f"{lr:.2e}"})
-            pbar.update(tokens_in_batch)
+                loss_val = loss.item()
+                loss_history.append({
+                    "step": step,
+                    "loss": loss_val,
+                    "tokens": tokens_processed,
+                    "lr": lr,
+                })
 
-            if step % save_every_steps == 0:
-                save_train_state(TRAIN_STATE_FILE, model, optimizer, step, tokens_processed, epoch, loss_history)
-                save_loss_history(loss_history, LOSS_LOG)
+                pbar.set_postfix({"loss": f"{loss_val:.4f}", "tokens": tokens_processed, "lr": f"{lr:.2e}"})
+                pbar.update(tokens_in_batch)
 
-            if step >= total_steps:
-                break
-        if step >= total_steps:
-            break
 
-    elapsed = time.time() - t_start
-    pbar.close()
-
-    save_model_weights(model, os.path.join(CHECKPOINT_DIR, "model_final.weights"))
-    save_train_state(TRAIN_STATE_FILE, model, optimizer, step, tokens_processed, epoch, loss_history)
-    save_loss_history(loss_history, LOSS_LOG)
-
-    print(f"\nTraining complete: {step} steps, {elapsed:.0f}s ({elapsed/step:.1f}s/step)")
-    print(f"Final loss: {loss_history[-1]['loss']:.4f}")
-    print(f"Loss history saved to {LOSS_LOG}")
-    print(f"Final checkpoint saved.")
+                # Save every 5 minutes
+                if time.time() - last_save > 300:
+                    save_checkpoint()
+                    try:
+                        plot_loss(GENERATED_DIR)
+                    except Exception as e:
+                        print(f"\nPlot failed: {e}")
+                    last_save = time.time()
+    except KeyboardInterrupt:
+        print("\n\nInterrupted — saving...")
+    finally:
+        pbar.close()
+        save_checkpoint()
+        elapsed = time.time() - t_start
+        print(f"Training: {step} steps, {elapsed:.0f}s ({elapsed/step:.1f}s/step)")
+        print(f"Final loss: {loss_history[-1]['loss']:.4f}")
+        print(f"Loss history: {LOSS_LOG}")
 
 
 if __name__ == "__main__":
