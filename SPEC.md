@@ -832,11 +832,11 @@ The bitnet.cpp TL1/TL2 kernels use lookup tables over grouped weight patterns to
 Recommended repository structure:
 
 ```text
-native-1bit-instruct/
+nue/
 ├── README.md
 ├── RESEARCH.md
 ├── pyproject.toml
-├── native1bit/
+├── nue/
 │   ├── __init__.py
 │   ├── config.py
 │   ├── tokenizer.py

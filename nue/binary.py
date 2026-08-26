@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from native1bit.quantization import binary_quantize_ste
+from nue.quantization import binary_quantize_ste
 
 def sign_quantize(w: torch.Tensor) -> torch.Tensor:
     return binary_quantize_ste(w)

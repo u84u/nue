@@ -29,7 +29,7 @@ import struct
 import torch
 import numpy as np
 import os
-from native1bit.binary import pack_bits
+from nue.binary import pack_bits
 
 MAGIC = b"N1BT"
 VERSION = 1

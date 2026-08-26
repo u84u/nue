@@ -1,6 +1,6 @@
 import unittest
 import torch
-from native1bit.layers import BitLinear
+from nue.layers import BitLinear
 
 class TestLayers(unittest.TestCase):
     def test_bitlinear_forward(self):

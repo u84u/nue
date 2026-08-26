@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from native1bit.layers import BitLinear, SubLN, BinaryEmbedding
+from nue.layers import BitLinear, SubLN, BinaryEmbedding
 import math
 from typing import Optional
 

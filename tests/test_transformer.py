@@ -1,6 +1,6 @@
 import unittest
 import torch
-from native1bit.transformer import TinyTransformer
+from nue.transformer import TinyTransformer
 
 class TestTransformer(unittest.TestCase):
     def test_forward(self):

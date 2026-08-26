@@ -1,8 +1,8 @@
 import unittest
 import torch
 import os
-from native1bit.transformer import TinyTransformer
-from native1bit.weights_format import save_model_weights
+from nue.transformer import TinyTransformer
+from nue.weights_format import save_model_weights
 
 class TestCheckpoint(unittest.TestCase):
     def test_save_load(self):

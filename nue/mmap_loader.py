@@ -8,11 +8,11 @@ import mmap
 import struct
 import torch
 import numpy as np
-from native1bit.weights_format import (
+from nue.weights_format import (
     MAGIC, VERSION, ENTRY_SIZE,
     _unpack_entry, DTYPE_BINARY_PACKED, DTYPE_FP32, DTYPE_FP16, DTYPE_FP32_MASTER,
 )
-from native1bit.transformer import TinyTransformer
+from nue.transformer import TinyTransformer
 
 
 class MMapLoader:

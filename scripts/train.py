@@ -1,10 +1,10 @@
 import torch
 import torch.optim as optim
 import math
-from native1bit.transformer import TinyTransformer
-from native1bit.losses import TrainingLosses
-from native1bit.weights_format import save_model_weights
-from native1bit.assertions import assert_binary_weights, BinaryWeightChecker
+from nue.transformer import TinyTransformer
+from nue.losses import TrainingLosses
+from nue.weights_format import save_model_weights
+from nue.assertions import assert_binary_weights, BinaryWeightChecker
 
 
 def get_lr(step, warmup_steps, max_lr, min_lr, total_steps):
@@ -36,7 +36,7 @@ def train():
     max_lr = 3e-4
     min_lr = 3e-5
 
-    # Binary weight assertion (enabled via NATIVE1BIT_ASSERT_BINARY=1)
+    # Binary weight assertion (enabled via NUE_ASSERT_BINARY=1)
     checker = BinaryWeightChecker(model)
 
     # Dummy data

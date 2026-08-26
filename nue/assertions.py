@@ -3,14 +3,14 @@
 Call assert_binary_weights(model) before every training step to verify
 that all effective forward-pass weights are strictly {-1, +1} (scaled binary).
 
-Set NATIVE1BIT_ASSERT_BINARY=1 to enable automatic assertions on every forward pass.
+Set NUE_ASSERT_BINARY=1 to enable automatic assertions on every forward pass.
 """
 
 import os
 import torch
 import torch.nn as nn
-from native1bit.quantization import binary_quantize_ste
-from native1bit.binary import absmean_scale
+from nue.quantization import binary_quantize_ste
+from nue.binary import absmean_scale
 
 
 def get_binary_weight_report(model: nn.Module) -> list[dict]:
@@ -111,7 +111,7 @@ class BinaryWeightChecker:
 
     def __init__(self, model: nn.Module, enabled: bool = None):
         if enabled is None:
-            enabled = os.environ.get("NATIVE1BIT_ASSERT_BINARY", "0") == "1"
+            enabled = os.environ.get("NUE_ASSERT_BINARY", "0") == "1"
         self.enabled = enabled
         self.model = model
 

@@ -1,6 +1,6 @@
 import unittest
 import torch
-from native1bit.losses import TrainingLosses
+from nue.losses import TrainingLosses
 
 class TestLosses(unittest.TestCase):
     def test_ntp_loss(self):

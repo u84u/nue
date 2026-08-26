@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from native1bit.binary import sign_quantize, absmean_scale
-from native1bit.quantization import binary_quantize_ste
+from nue.binary import sign_quantize, absmean_scale
+from nue.quantization import binary_quantize_ste
 
 
 class BinaryEmbedding(nn.Module):

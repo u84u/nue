@@ -1,6 +1,6 @@
 import unittest
 import torch
-from native1bit.binary import sign_quantize, pack_bits
+from nue.binary import sign_quantize, pack_bits
 
 class TestBinaryRepresentation(unittest.TestCase):
     def test_sign_quantize(self):

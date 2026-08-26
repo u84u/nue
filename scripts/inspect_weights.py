@@ -14,8 +14,8 @@ import torch
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from native1bit.transformer import TinyTransformer
-from native1bit.assertions import get_binary_weight_report, assert_binary_weights
+from nue.transformer import TinyTransformer
+from nue.assertions import get_binary_weight_report, assert_binary_weights
 
 
 def print_report(model: torch.nn.Module, verbose: bool = False) -> None:

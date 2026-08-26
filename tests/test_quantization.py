@@ -1,6 +1,6 @@
 import unittest
 import torch
-from native1bit.quantization import binary_quantize_ste
+from nue.quantization import binary_quantize_ste
 
 class TestQuantization(unittest.TestCase):
     def test_ste_forward(self):

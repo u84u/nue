@@ -1,7 +1,7 @@
 import unittest
 import torch
-from native1bit.tokenizer import Tokenizer
-from native1bit.data import prepare_instruct_data, masked_ntp_loss
+from nue.tokenizer import Tokenizer
+from nue.data import prepare_instruct_data, masked_ntp_loss
 
 class TestInstructData(unittest.TestCase):
     def test_masking(self):

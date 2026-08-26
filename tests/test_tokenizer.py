@@ -1,6 +1,6 @@
 import unittest
 import time
-from native1bit.tokenizer import Tokenizer
+from nue.tokenizer import Tokenizer
 
 
 class TestTokenizerRoundtrip(unittest.TestCase):
