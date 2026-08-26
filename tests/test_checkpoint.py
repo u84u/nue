@@ -13,7 +13,7 @@ class TestCheckpoint(unittest.TestCase):
         head_dim = 8
         mlp_size = 32
         
-        model = TinyTransformer(vocab_size, hidden_size, num_layers, num_heads, head_dim, mlp_size)
+        model = TinyTransformer(vocab_size, hidden_size, num_layers, num_heads, 2, head_dim, mlp_size)
         filepath = "test_model.weights"
         
         save_model_weights(model, filepath)

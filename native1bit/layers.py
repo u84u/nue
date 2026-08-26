@@ -1,6 +1,29 @@
 import torch
 import torch.nn as nn
 from native1bit.binary import sign_quantize, absmean_scale
+from native1bit.quantization import binary_quantize_ste
+
+
+class BinaryEmbedding(nn.Module):
+    """Embedding with binary {-1,+1} weights via STE.
+
+    Master weights are float32 for the optimizer, but the forward pass
+    applies sign() to produce {-1,+1} effective weights. The STE allows
+    gradients to flow through to the master weights during backward.
+    """
+    def __init__(self, num_embeddings: int, embedding_dim: int):
+        super().__init__()
+        self.weight = nn.Parameter(torch.randn(num_embeddings, embedding_dim))
+        # Initialize as binary
+        with torch.no_grad():
+            self.weight.data = torch.sign(self.weight.data)
+            self.weight.data[self.weight.data == 0] = 1.0
+
+    def forward(self, idx: torch.Tensor) -> torch.Tensor:
+        # Quantize full embedding matrix with STE each forward pass
+        w_binary = binary_quantize_ste(self.weight)
+        return w_binary[idx]
+
 
 class BitLinear(nn.Linear):
     def __init__(self, in_features, out_features, bias=False, group_size=128):

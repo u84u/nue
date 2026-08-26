@@ -1,3 +1,6 @@
 venv/
 *.weights
 __pycache__/
+*.pt
+*.weights
+loss_history.csv

@@ -13,7 +13,7 @@ class TestTransformer(unittest.TestCase):
         batch = 2
         seq_len = 8
         
-        model = TinyTransformer(vocab_size, hidden_size, num_layers, num_heads, head_dim, mlp_size)
+        model = TinyTransformer(vocab_size, hidden_size, num_layers, num_heads, 2, head_dim, mlp_size)
         idx = torch.randint(0, vocab_size, (batch, seq_len))
         
         logits = model(idx)
