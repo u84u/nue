@@ -12,5 +12,6 @@ authors = [
 dependencies = [
     "torch",
     "numpy",
+    "tqdm",
 ]
 requires-python = ">=3.10"
