@@ -15,5 +15,6 @@ dependencies = [
     "tqdm",
     "matplotlib",
     "tornado",
+    "datasets",
 ]
 requires-python = ">=3.10"

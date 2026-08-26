@@ -110,6 +110,7 @@ def load_inference_model(
     num_kv_heads: int = 2,
     head_dim: int = 128,
     mlp_size: int = 4096,
+    max_seq_len: int = 8192,
     device: str = "cpu",
 ) -> TinyTransformer:
     """Load a TinyTransformer from a model.weights file.
@@ -125,6 +126,7 @@ def load_inference_model(
         num_kv_heads=num_kv_heads,
         head_dim=head_dim,
         mlp_size=mlp_size,
+        max_seq_len=max_seq_len,
     )
 
     with MMapLoader(filepath) as loader:

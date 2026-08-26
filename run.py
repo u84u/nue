@@ -54,6 +54,7 @@ def load_model(checkpoint_dir: str):
         num_kv_heads=config["num_kv_heads"],
         head_dim=config["head_dim"],
         mlp_size=config["mlp_size"],
+        max_seq_len=config.get("max_seq_len", 8192),
     )
     model.eval()
 

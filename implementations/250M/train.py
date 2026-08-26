@@ -1,3 +1,12 @@
+"""
+Nue 250M — Binary transformer training on TinyStories.
+
+Usage:
+    PYTHONPATH=. python implementations/250M/train.py
+    PYTHONPATH=. python implementations/250M/train.py --resume
+    PYTHONPATH=. python implementations/250M/train.py --data /path/to/dataset.txt
+"""
+
 import torch
 import torch.optim as optim
 import os
@@ -14,25 +23,26 @@ from nue.weights_format import save_model_weights
 from nue.assertions import assert_binary_weights, BinaryWeightChecker
 from plot_loss import plot_loss
 
-# Optimal thread count for this model size — beyond 4, contention > benefit
-torch.set_num_threads(min(4, os.cpu_count() or 4))
-# Allow TF32 on supported hardware (Ampere+ CPU/GPU)
+# Optimal thread count — beyond this, contention > benefit for this model size
+torch.set_num_threads(min(8, os.cpu_count() or 8))
 torch.set_float32_matmul_precision("high")
 
-CHECKPOINT_DIR = "implementations/1M"
+CHECKPOINT_DIR = "implementations/250M"
 GENERATED_DIR = os.path.join(CHECKPOINT_DIR, "generated")
 LOSS_LOG = os.path.join(GENERATED_DIR, "loss_history.csv")
 TRAIN_STATE_FILE = os.path.join(GENERATED_DIR, "train_state.pt")
 TOKEN_CACHE = os.path.join(GENERATED_DIR, "tokens.pt")
-DEFAULT_DATA = "implementations/1M/shakespeare.txt"
+DEFAULT_DATA = "roneneldan/TinyStories"
 
 
 class TextDataset(Dataset):
     def __init__(self, tokens, seq_len):
         self.tokens = tokens
         self.seq_len = seq_len
+
     def __len__(self):
         return len(self.tokens) - self.seq_len
+
     def __getitem__(self, idx):
         x = self.tokens[idx : idx + self.seq_len]
         y = self.tokens[idx + 1 : idx + self.seq_len + 1]
@@ -55,11 +65,9 @@ def load_text(data_source):
     print(f"Loading HuggingFace dataset: {data_source}")
     ds = load_dataset(data_source, split="train", trust_remote_code=True)
     print(f"  {len(ds)} examples")
-    # Concatenate all text fields
     if "text" in ds.column_names:
         return "\n".join(ds["text"])
     else:
-        # Try first string column
         for col in ds.column_names:
             if ds[col].dtype == "string":
                 return "\n".join(ds[col])
@@ -97,26 +105,27 @@ def train(resume=False, data_source=None):
 
     data_source = data_source or DEFAULT_DATA
 
-    # 1M parameter config (Power-of-Two)
+    # 250M parameter config (Power-of-Two)
     config = {
-        "vocab_size": 1024,
-        "hidden_size": 128,
-        "num_layers": 4,
-        "num_heads": 4,
+        "vocab_size": 32768,
+        "hidden_size": 1024,
+        "num_layers": 12,
+        "num_heads": 8,
         "num_kv_heads": 2,
-        "head_dim": 32,
-        "mlp_size": 512,
+        "head_dim": 128,
+        "mlp_size": 4096,
+        "max_seq_len": 2048,
     }
 
     model = TinyTransformer(**config)
-    print(f"Model Created: {sum(p.numel() for p in model.parameters())/1e6:.2f}M parameters")
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Model Created: {n_params/1e6:.1f}M parameters ({n_params/1e6:.2f}M)")
 
-    # Compile the model — fuses small ops (absmean, sign, RMSNorm, etc.) into single kernels
-    # Gives ~20% speedup on training by eliminating Python dispatch overhead
+    # Compile — benefits more on larger models
     model = torch.compile(model, mode="reduce-overhead")
     print("Model compiled (torch.compile, reduce-overhead)")
 
-    # Dataset — cache tokenized data to disk to avoid re-tokenizing on every run
+    # Dataset — cache tokenized data to disk
     tokenizer_file = os.path.join(GENERATED_DIR, "tokenizer.json")
     if resume and os.path.exists(TOKEN_CACHE):
         print(f"Loading cached tokens from {TOKEN_CACHE}")
@@ -137,8 +146,8 @@ def train(resume=False, data_source=None):
         print(f"Tokens cached to {TOKEN_CACHE}")
     print(f"Tokens: {len(data)}")
 
-    seq_len = 256
-    batch_size = 8
+    seq_len = 1024
+    batch_size = 4  # conservative for 250M on CPU
     dataset = TextDataset(data, seq_len)
     num_workers = min(4, max(1, (os.cpu_count() or 4) // 2))
     loader = DataLoader(
@@ -147,10 +156,11 @@ def train(resume=False, data_source=None):
         persistent_workers=True, prefetch_factor=4,
     )
     print(f"DataLoader: {num_workers} workers, prefetch_factor=4")
+    print(f"Batch: {batch_size} x {seq_len} = {batch_size * seq_len} tokens/step")
 
-    # Training config
+    # Training config — scaled for larger model
     max_grad_norm = 1.0
-    warmup_steps = 100
+    warmup_steps = 200
     lr = 3e-4
 
     def get_lr(step):
@@ -201,9 +211,9 @@ def train(resume=False, data_source=None):
         for epoch in range(start_epoch, 10_000):
             for x, y in loader:
                 step += 1
-                lr = get_lr(step)
+                current_lr = get_lr(step)
                 for pg in optimizer.param_groups:
-                    pg["lr"] = lr
+                    pg["lr"] = current_lr
 
                 optimizer.zero_grad(set_to_none=True)
                 logits = model(x)
@@ -222,12 +232,11 @@ def train(resume=False, data_source=None):
                     "step": step,
                     "loss": loss_val,
                     "tokens": tokens_processed,
-                    "lr": lr,
+                    "lr": current_lr,
                 })
 
-                pbar.set_postfix({"loss": f"{loss_val:.4f}", "tokens": tokens_processed, "lr": f"{lr:.2e}"})
+                pbar.set_postfix({"loss": f"{loss_val:.4f}", "tokens": tokens_processed, "lr": f"{current_lr:.2e}"})
                 pbar.update(tokens_in_batch)
-
 
                 # Save every 5 minutes
                 if time.time() - last_save > 300:
@@ -251,7 +260,7 @@ def train(resume=False, data_source=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Nue training")
+    parser = argparse.ArgumentParser(description="Nue 250M training")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--data", type=str, default=None, help="Data source: local .txt file or HuggingFace dataset name")
     args = parser.parse_args()
